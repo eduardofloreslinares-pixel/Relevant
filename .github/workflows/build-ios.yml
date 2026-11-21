@@ -11,6 +11,7 @@ permissions:
 jobs:
   ipa:
     runs-on: macos-15
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,6 +26,7 @@ jobs:
               unzip -q "${archives[0]}" -d "$RUNNER_TEMP/relevant-source"
             fi
           fi
+
           project="$(find "$GITHUB_WORKSPACE" "$RUNNER_TEMP" -name Relevant.xcodeproj -type d -print -quit)"
           if [[ -z "$project" ]]; then
             echo "Relevant.xcodeproj was not found."
@@ -36,9 +38,14 @@ jobs:
         env:
           RELEVANT_PROJECT: ${{ steps.project.outputs.path }}
         run: |
-          set -o pipefail
+          set -eo pipefail
+          xcode="$(python3 -c 'import glob, re; print(max(glob.glob("/Applications/Xcode_26*.app"), key=lambda path: tuple(map(int, re.findall(r"\d+", path)))))')"
+          export DEVELOPER_DIR="$xcode/Contents/Developer"
+          xcodebuild -version
+
           xcodebuild -project "$RELEVANT_PROJECT" -scheme Relevant -configuration Release \
-            -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/relevant-build" \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/relevant-build" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
       - name: Package unsigned IPA
