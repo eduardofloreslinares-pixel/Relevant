@@ -1,0 +1,55 @@
+name: Build Relevant IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve project
+        id: project
+        shell: bash
+        run: |
+          if [[ ! -d Relevant.xcodeproj ]]; then
+            shopt -s nullglob
+            archives=(Relevant-iOS.zip */Relevant-iOS.zip)
+            if [[ ${#archives[@]} -eq 1 ]]; then
+              unzip -q "${archives[0]}" -d "$RUNNER_TEMP/relevant-source"
+            fi
+          fi
+          project="$(find "$GITHUB_WORKSPACE" "$RUNNER_TEMP" -name Relevant.xcodeproj -type d -print -quit)"
+          if [[ -z "$project" ]]; then
+            echo "Relevant.xcodeproj was not found."
+            exit 1
+          fi
+          echo "path=$project" >> "$GITHUB_OUTPUT"
+
+      - name: Build app for iPhone
+        env:
+          RELEVANT_PROJECT: ${{ steps.project.outputs.path }}
+        run: |
+          set -o pipefail
+          xcodebuild -project "$RELEVANT_PROJECT" -scheme Relevant -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/relevant-build" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R "$RUNNER_TEMP/relevant-build/Build/Products/Release-iphoneos/Relevant.app" Payload/
+          /usr/bin/zip -q -r Relevant.ipa Payload
+          unzip -t Relevant.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Relevant-iOS
+          path: Relevant.ipa
+          if-no-files-found: error
